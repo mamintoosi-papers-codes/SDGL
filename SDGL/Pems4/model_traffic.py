@@ -1,9 +1,14 @@
+import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 from ..graph_learn_module import graph_constructor
 from SDGL.layer_mtgnn import *
 import numpy as np
-
+import os
+import sys
+# Add the parent directory to sys.path to import the utils module
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from util import estimate_adjacency_with_dagma
 
 class dnconv(nn.Module):
     def __init__(self):
@@ -48,18 +53,22 @@ class gcn_module(nn.Module):
         h = F.dropout(h, self.dropout, training=self.training)
         return h
 
-
 class SDGL_model(nn.Module):
     def __init__(self, device, num_nodes, dropout=0.3, gcn_bool=True, addaptadj=True, seq_length=12,
                  in_dim=1, out_dim=12, residual_channels=32, dilation_channels=32, skip_channels=64, end_channels=128,
                  layers=2, embed_dim=10, dropout_ingc=0.5, eta=1, gamma=0.001,
-                 m=0.9, batch_size=64, dilation_exponential_=1):
+                 m=0.9, batch_size=64, dilation_exponential_=1, use_dagma=False, dagma_mode=1,
+                 dataset_name="PeMSD4"):
         super(SDGL_model, self).__init__()
         self.dropout = dropout
 
         self.layers = layers
         self.gcn_bool = gcn_bool
         self.addaptadj = addaptadj
+        self.use_dagma = use_dagma
+        self.dagma_mode = dagma_mode
+        self.dataset_name = dataset_name
+        self.out_dim = out_dim
 
         self.filter_convs = nn.ModuleList()
         self.gate_convs = nn.ModuleList()
@@ -159,10 +168,41 @@ class SDGL_model(nn.Module):
         static_adj, gl_loss, dy_adj = None, None, None
 
         if self.gcn_bool:
-            adj_d, adj_s, node_embed, graph_loss = self.graph_construct(input)
-            gl_loss = graph_loss
-            static_adj = adj_s
-            dy_adj = adj_d
+            if self.use_dagma:
+                # Use DAGMA to estimate adjacency matrix
+                from SDGL.Pems4.util import estimate_adjacency_with_dagma
+                adj = estimate_adjacency_with_dagma(
+                    input.detach().cpu().numpy(), 
+                    pre_len=self.out_dim,
+                    dataset_name=self.dataset_name,
+                    use_gsl=self.dagma_mode
+                )
+                # Convert to tensor
+                dagma_adj = torch.tensor(adj, dtype=torch.float32, device=input.device)
+                
+                # Get original adjacency matrices
+                adj_d, adj_s, node_embed, graph_loss = self.graph_construct(input)
+                gl_loss = graph_loss
+                # Combine with DAGMA adjacency based on mode
+                if self.dagma_mode == 1:  # GSL Only
+                    static_adj = dagma_adj
+                    dy_adj = adj_d #dagma_adj
+                    # gl_loss = None  # No graph loss when using DAGMA only
+                elif self.dagma_mode == 2:  # GSL for directed cyclic graph
+                    static_adj = dagma_adj
+                    dy_adj = adj_d  # Keep dynamic adjacency from original method
+                    # gl_loss = graph_loss
+                elif self.dagma_mode == 3:  # GSL + Adj
+                    # Combine DAGMA with original adjacency
+                    static_adj = (adj_s + dagma_adj) / 2  # Simple average, can be adjusted
+                    dy_adj = adj_d
+                    # gl_loss = graph_loss
+            else:
+                # Original graph learning method
+                adj_d, adj_s, node_embed, graph_loss = self.graph_construct(input)
+                gl_loss = graph_loss
+                static_adj = adj_s
+                dy_adj = adj_d
 
         skip = self.skip0(F.dropout(x, self.dropout, training=self.training))
         x = self.start_conv(x)
@@ -198,5 +238,5 @@ class SDGL_model(nn.Module):
         x = F.relu(self.end_conv_1(x))
         x = self.end_conv_2(x)
         x = x
-
+        print(x,gl_loss)
         return x, gl_loss, None

@@ -3,20 +3,21 @@ from .model_traffic import *
 from torch.optim import lr_scheduler
 import torch
 from .lib.metrics import RMSE_torch, MAE_torch, MAPE_torch
-
+from util import estimate_adjacency_with_dagma
 
 class trainer():
     def __init__(self, scaler, in_dim, seq_length, num_nodes, nhid, dropout, lrate, wdecay, device, gcn_bool,
                  addaptadj, embed_dim, dropout_ingc=0.5, eta=1, gamma=0.0001, order=1, m=0.9,
-                 layers=2, batch_size=64, dilation_exponential_=2,):
+                 layers=2, batch_size=64, dilation_exponential_=2, use_dagma=False, dagma_mode=1, dataset_name="PeMSD4"):
 
         self.model = SDGL_model(device, num_nodes, dropout, gcn_bool=gcn_bool, addaptadj=addaptadj,
                                 in_dim=in_dim, out_dim=seq_length, residual_channels=nhid,
                                 dilation_channels=nhid, skip_channels=nhid * 8,  # skip_channels,
                                 end_channels=nhid * 16, embed_dim=embed_dim, dropout_ingc=dropout_ingc,  # end_channels
                                 eta=eta, gamma=gamma, m=m, layers=layers, batch_size=batch_size,
-                                dilation_exponential_=dilation_exponential_)
-
+                                dilation_exponential_=dilation_exponential_, use_dagma=use_dagma, 
+                                dagma_mode=dagma_mode, dataset_name=dataset_name)
+        
         self.model.to(device)
         self.gc_order = order
         nparams = sum([p.nelement() for p in self.model.parameters()])

@@ -13,6 +13,10 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--device', type=str, default='cuda:0', help='')
 parser.add_argument('--dataset', type=str, default='PEMSD4', help='dataset')
 
+# Add new DAGMA parameters
+parser.add_argument('--use_dagma', action='store_true', help='Use DAGMA for adjacency matrix estimation')
+parser.add_argument('--dagma_mode', type=int, default=1, help='DAGMA mode: 1=GSL Only, 2=GSL for directed cyclic graph, 3=GSL+Adj')
+
 parser.add_argument('--gcn_bool', type=bool, default=True, help='whether to add graph convolution layer')
 parser.add_argument('--addaptadj', type=bool, default=True, help='whether add adaptive adj')
 
@@ -77,10 +81,18 @@ def main():
 
     log_string(str(args))
 
-    engine = trainer(scaler, args.in_dim, args.seq_length, args.num_nodes, args.nhid, args.dropout,
-                     args.learning_rate, args.weight_decay, device, args.gcn_bool, args.addaptadj,
-                     args.embed_dim, args.dropout_ingc, args.eta, args.gamma, args.order, args.moco,
-                     args.layers, args.batch_size, args.dilation_exponential_)
+    if args.use_dagma:
+        engine = trainer(scaler, args.in_dim, args.seq_length, args.num_nodes, args.nhid, args.dropout,
+                        args.learning_rate, args.weight_decay, device, args.gcn_bool, args.addaptadj,
+                        args.embed_dim, args.dropout_ingc, args.eta, args.gamma, args.order, args.moco,
+                        args.layers, args.batch_size, args.dilation_exponential_, args.use_dagma, 
+                        args.dagma_mode, args.dataset)
+    else:
+        engine = trainer(scaler, args.in_dim, args.seq_length, args.num_nodes, args.nhid, args.dropout,
+                        args.learning_rate, args.weight_decay, device, args.gcn_bool, args.addaptadj,
+                        args.embed_dim, args.dropout_ingc, args.eta, args.gamma, args.order, args.moco,
+                        args.layers, args.batch_size, args.dilation_exponential_,dataset_name=args.dataset)
+
     nparams = sum([p.nelement() for p in engine.model.parameters()])
     log_string('The model parameter number is: {}'.format(str(nparams)))
 

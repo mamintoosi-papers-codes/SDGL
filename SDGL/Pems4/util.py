@@ -4,7 +4,76 @@ import os
 import scipy.sparse as sp
 import torch
 from scipy.sparse import linalg
+from dagma.linear import DagmaLinear
 
+def estimate_adjacency_with_dagma(data, pre_len=12, dataset_name="PEMSD4", use_gsl=1, cache_dir="./dagma_adj"):
+    """
+    Estimate adjacency matrix using DAGMA
+    
+    Args:
+        data: Input data with shape [batch_size, in_dim, num_nodes, seq_length]
+        pre_len: Prediction length
+        dataset_name: Name of the dataset
+        use_gsl: DAGMA mode (1=GSL Only, 2=GSL for directed cyclic graph, 3=GSL+Adj)
+        cache_dir: Directory to cache the computed adjacency matrices
+        
+    Returns:
+        adj: Estimated adjacency matrix with shape [num_nodes, num_nodes]
+    """
+    try:
+        import dagma
+        from dagma.linear import DagmaLinear
+    except ImportError:
+        print("DAGMA not installed. Please install it using: pip install dagma")
+        # Return identity matrix as fallback
+        num_nodes = data.shape[2]
+        return np.eye(num_nodes)
+    
+    # Check if cached result exists
+    import os
+    if not os.path.exists(cache_dir):
+        os.makedirs(cache_dir)
+    cache_file = f"{cache_dir}/{dataset_name}_adj_dagma_mode{use_gsl}.npy"
+    if os.path.exists(cache_file):
+        print(f"Loading cached DAGMA adjacency matrix from {cache_file}")
+        return np.load(cache_file)
+    
+    print("Computing DAGMA adjacency matrix...")
+    
+    # Reshape data for DAGMA: [num_samples, num_nodes]
+    # We need to reshape the 4D tensor to a 2D matrix where each row is a sample
+    # and each column is a node
+    batch_size, in_dim, num_nodes, seq_length = data.shape
+    
+    # Reshape to [batch_size * seq_length, num_nodes]
+    # First transpose to get [batch_size, seq_length, num_nodes, in_dim]
+    reshaped_data = np.transpose(data, (0, 3, 2, 1))
+    # Then reshape to [batch_size * seq_length, num_nodes * in_dim]
+    reshaped_data = reshaped_data.reshape(batch_size * seq_length, num_nodes * in_dim)
+    
+    # If in_dim > 1, we need to further process the data
+    if in_dim > 1:
+        # Take only the first feature for each node to simplify
+        X = reshaped_data[:, ::in_dim]  # Take every in_dim-th column
+    else:
+        X = reshaped_data
+    
+    # Apply DAGMA
+    lambda1 = 0.1  # Regularization parameter
+    model = DagmaLinear(loss_type='l2')
+    w_est = model.fit(X, lambda1=lambda1)
+    
+    # Convert to adjacency matrix (absolute values)
+    adj = np.abs(w_est)
+    
+    # Normalize adjacency matrix
+    adj = adj / (np.max(adj) + 1e-10)
+    
+    # Save the computed adjacency matrix for future use
+    np.save(cache_file, adj)
+    print(f"Saved DAGMA adjacency matrix to {cache_file}")
+    
+    return adj
 
 class DataLoader(object):
     def __init__(self, xs, ys, batch_size, pad_with_last_sample=True):
