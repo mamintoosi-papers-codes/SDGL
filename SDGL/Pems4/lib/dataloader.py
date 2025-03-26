@@ -86,6 +86,9 @@ def data_loader(X, Y, batch_size, shuffle=True, drop_last=True):
 
 
 def get_dataloader(args, normalizer='std', tod=False, dow=False, weather=False, single=True):
+        # Set fixed random seed for reproducibility
+    np.random.seed(42)
+    torch.manual_seed(42)
     # load raw st dataset
     print(args)
     data = load_st_dataset(args.dataset)  # B, N, D

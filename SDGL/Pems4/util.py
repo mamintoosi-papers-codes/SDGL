@@ -6,7 +6,7 @@ import torch
 from scipy.sparse import linalg
 from dagma.linear import DagmaLinear
 
-def estimate_adjacency_with_dagma(data, pre_len=12, dataset_name="PEMSD4", use_gsl=1, cache_dir="./dagma_adj"):
+def estimate_adjacency_with_dagma(data=None, pre_len=12, dataset_name="PEMSD4", use_gsl=1, cache_dir="./dagma_adj"):
     """
     Estimate adjacency matrix using DAGMA
     
@@ -26,7 +26,11 @@ def estimate_adjacency_with_dagma(data, pre_len=12, dataset_name="PEMSD4", use_g
     except ImportError:
         print("DAGMA not installed. Please install it using: pip install dagma")
         # Return identity matrix as fallback
-        num_nodes = data.shape[2]
+        if data is not None:
+            num_nodes = data.shape[2]
+        else:
+            # Default for PEMSD4
+            num_nodes = 307
         return np.eye(num_nodes)
     
     # Check if cached result exists
@@ -40,25 +44,30 @@ def estimate_adjacency_with_dagma(data, pre_len=12, dataset_name="PEMSD4", use_g
     
     print("Computing DAGMA adjacency matrix...")
     
-    # Reshape data for DAGMA: [num_samples, num_nodes]
-    # We need to reshape the 4D tensor to a 2D matrix where each row is a sample
-    # and each column is a node
-    batch_size, in_dim, num_nodes, seq_length = data.shape
+    # Set fixed random seed for reproducibility
+    np.random.seed(42)
     
-    # Reshape to [batch_size * seq_length, num_nodes]
-    # First transpose to get [batch_size, seq_length, num_nodes, in_dim]
-    reshaped_data = np.transpose(data, (0, 3, 2, 1))
-    # Then reshape to [batch_size * seq_length, num_nodes * in_dim]
-    reshaped_data = reshaped_data.reshape(batch_size * seq_length, num_nodes * in_dim)
+    # Load raw data directly
+    from SDGL.Pems4.lib.load_dataset import load_st_dataset
     
-    # If in_dim > 1, we need to further process the data
-    if in_dim > 1:
-        # Take only the first feature for each node to simplify
-        X = reshaped_data[:, ::in_dim]  # Take every in_dim-th column
-    else:
-        X = reshaped_data
+    # Load the raw data
+    raw_data = load_st_dataset(dataset_name)  # B, N, D
+    print(f"Loaded raw data with shape {raw_data.shape}")
     
-    # Apply DAGMA
+    # Use only training portion (60% of data) for DAGMA
+    # This matches the default split in get_dataloader (20% test, 20% val, 60% train)
+    data_len = raw_data.shape[0]
+    train_data = raw_data[:-int(data_len * 0.4)]
+    print(f"Using training portion of data with shape {train_data.shape} for DAGMA")
+
+    # print(train_data.shape)
+    # print(train_data[:3,:5])
+    
+    # Reshape training data for DAGMA: [num_samples, num_nodes]
+    num_samples, num_nodes, features = train_data.shape
+    X = train_data.reshape(num_samples, num_nodes)
+    
+    print(f"Applying DAGMA on data with shape {X.shape}")
     lambda1 = 0.1  # Regularization parameter
     model = DagmaLinear(loss_type='l2')
     w_est = model.fit(X, lambda1=lambda1)
