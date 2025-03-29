@@ -238,5 +238,5 @@ class SDGL_model(nn.Module):
         x = F.relu(self.end_conv_1(x))
         x = self.end_conv_2(x)
         x = x
-        print(x,gl_loss)
+        # print(x,gl_loss)
         return x, gl_loss, None

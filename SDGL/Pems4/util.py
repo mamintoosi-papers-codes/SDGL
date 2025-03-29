@@ -39,7 +39,7 @@ def estimate_adjacency_with_dagma(data=None, pre_len=12, dataset_name="PEMSD4", 
         os.makedirs(cache_dir)
     cache_file = f"{cache_dir}/{dataset_name}_adj_dagma_mode{use_gsl}.npy"
     if os.path.exists(cache_file):
-        print(f"Loading cached DAGMA adjacency matrix from {cache_file}")
+        # print(f"Loading cached DAGMA adjacency matrix from {cache_file}")
         return np.load(cache_file)
     
     print("Computing DAGMA adjacency matrix...")
